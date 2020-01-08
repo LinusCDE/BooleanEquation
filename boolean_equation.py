@@ -19,18 +19,30 @@ class InvalidOperandError(LogicError):
     pass
 
 
+def parse(operand) -> 'Node':
+    '''Parse to actual Node'''
+    if isinstance(operand, int) or isinstance(operand, bool):
+        return Const(operand)
+    elif isinstance(operand, str):
+        while operand.startswith('~~'):
+            operand = operand[2:]
+        if operand.startswith('~'):
+            return Not(Var(operand[1:]))
+        else:
+            return Var(operand)
+    elif isinstance(operand, Node):
+        return operand
+    else:
+        return InvalidOperandError("The following operand isn't based on Node and can't be changed to Const(): %s" % repr(operand))
+
+
 def _operandGenerator(operands):
     '''
     Generate guaranteed list of operands based on Node.
     Attempts to parse other types or raises InvalidOperandError!
     '''
     for operand in operands:
-        if isinstance(operand, int) or isinstance(operand, bool):
-            yield Const(operand)
-        elif isinstance(operand, Node):
-            yield operand
-        else:
-            raise InvalidOperandError("The following operand isn't based on Node and can't be changed to Const(): %s" % repr(operand))
+        yield parse(operand)
 
 
 def isUnknown(node):
@@ -56,6 +68,35 @@ class Node(ABC):
     
     def __bool__(self) -> bool:
         return bool(self.state())
+    
+    def __or__(self, other) -> 'Node':
+        # Would work without this assert, but allow dumb operator pairs like in JS
+        assert isinstance(other, Node)
+
+        if isinstance(self, Or) and isinstance(other, Or):
+            return Or(*self.operands, *other.operands)
+        elif isinstance(self, Or):
+            return Or(*self.operands, other)
+        elif isinstance(other, Or):
+            return Or(self, *other.operands)
+        else:
+            return Or(self, other)
+    
+    def __and__(self, other) -> 'Node':
+        # Would work without this assert, but allow dumb operator pairs like in JS
+        assert isinstance(other, Node)
+        
+        if isinstance(self, And) and isinstance(other, And):
+            return And(*self.operands, *other.operands)
+        elif isinstance(self, And):
+            return And(*self.operands, other)
+        elif isinstance(other, And):
+            return And(self, *other.operands)
+        else:
+            return And(self, other)
+    
+    def __invert__(self) -> 'Node':
+        return Not(self)
 
 
 class Var(Node):
@@ -95,7 +136,6 @@ class Var(Node):
             return '%s=?' % self.name
         else:
             return '%s=%s' % (self.name, int(self.state()))
-
 
 
 class Const(Node):
@@ -240,10 +280,10 @@ class Or(Node):
 class Not(Node):
 
     def __init__(self, operand):
-        self.operand = next(_operandGenerator((operand,)))
+        self.operands = [ next(_operandGenerator((operand,))) ]
     
     def state(self) -> bool:
-        return not self.operand.state()
+        return not self.operands[0].state()
     
     def set_state(self, newState: bool):
         try:
@@ -252,13 +292,18 @@ class Not(Node):
         except UnknownStateError:
             pass
         
-        self.operand.set_state(not newState)
+        self.operands[0].set_state(not newState)
     
     def __repr__(self):
-        return 'Not(%s)' % repr(self.operand)
+        return 'Not(%s)' % repr(self.operands[0])
     
     def __str__(self):
-        return '~(%s)' % self.operand
+        operand = self.operands[0]
+        if isinstance(operand, And) or isinstance(operand, Or) or isinstance(operand, Xor) \
+            or isinstance(operand, Not) or isinstance(operand, Var) or isinstance(operand, Const):
+            return '~%s' % operand
+        else:
+            return '~(%s)' % operand
 
 
 class Xor(Node):
@@ -331,8 +376,173 @@ class Xor(Node):
     def __str__(self):
         return '(' + ' xor '.join(map(lambda op: str(op), self.operands)) + ')'
 
+
+class Implication(Node):
+    def __init__(self, a, b):
+        Node.__init__(self)
+        parsedA, parsedB = parse(a), parse(b)
+        self.operands = [parsedA, parsedB]
+        self.base = Or(Not(parsedA), parsedB)
+    
+    def state(self):
+        return self.base.state()
+    
+    def set_state(self, new_state):
+        return self.base.set_state(new_state)
+
+    def __repr__(self):
+        return 'Implication(%s, %s)' % (repr(self.operands[0]), repr(self.operands[1]))
+    
+    def __str__(self):
+        return '%s \u2192 %s' % (str(self.operands[0]), str(self.operands[1]))
+
+
+class Equivalent(Node):
+    def __init__(self, a, b):
+        Node.__init__(self)
+        parsedA, parsedB = parse(a), parse(b)
+        self.operands = [parsedA, parsedB]
+        self.base = And(Implication(parsedA, parsedB), Implication(parsedB, parsedA))
+    
+    def state(self):
+        return self.base.state()
+    
+    def set_state(self, new_state):
+        return self.base.set_state(new_state)
+
+    def __repr__(self):
+        return 'Equivalent(%s, %s)' % (repr(self.operands[0]), repr(self.operands[1]))
+    
+    def __str__(self):
+        return '%s \u2194 %s' % (str(self.operands[0]), str(self.operands[1]))
+
+
 def Nor(*operands):
-    return Not(Or(operands))
+    return Not(Or(*operands))
+
 
 def Nand(*operands):
-    return Not(And(operands))
+    return Not(And(*operands))
+
+
+def find_variables(operand):
+    operands = [ operand ]
+    while len(operands) > 0:
+        operand = operands.pop()
+        if isinstance(operand, Var):
+            yield operand
+        else:
+            for suboperand in operand.operands:
+                operands.append(suboperand)
+
+
+def find_variable_state(operand, variable_name):
+    state = None
+    count = 0
+    for variable in find_variables(operand):
+        if variable.name != variable_name:
+            continue
+
+        count += 1
+        if variable.state() is not state and state is not None:
+            raise LogicError('The variable %s does not always has the same state!' % repr(variable_name))
+        else:
+            state = variable.state()
+    
+    if count == 0:  
+        raise LogicError('Variable %s could not be found.' % repr(variable_name))
+    return state
+
+
+def find_variable_state_or_default(operand, variable_name, default=None):
+    try:
+        return find_variable_state(operand, variable_name)
+    except UnknownStateError:
+        return default
+
+
+def set_variable_state(operand, variable_name, new_state):
+    for variable in find_variables(operand):
+        if variable.name != variable_name:
+            continue
+        variable.set_state(new_state)
+
+
+def print_lookup_table(*statements, sorted_variables=True):
+    variable_names = list(set(map(lambda var: var.name, find_variables(statements[0]))))
+    if sorted_variables:
+        variable_names.sort()
+    
+    if len(statements) > 1:
+        variable_name_sets = [ set(map(lambda var: var.name, find_variables(statement))) for statement in statements ]
+        for prev_var_set, var_set in zip(variable_name_sets[:1], variable_name_sets[1:]):
+            if prev_var_set != var_set:
+                raise LogicError('Variable names are not matching for all given statements.')
+
+    # Backup states
+    orig_states = []
+    for statement in statements:
+        orig_states.append([ [name, find_variable_state_or_default(statement, name)] for name in variable_names ])
+    
+    # Header
+    print('', *variable_names, sep=' | ', end='')
+    for variable_name in variable_names:
+        for statement in statements:
+            set_variable_state(statement, variable_name, None)
+    statement_strings = list(map(lambda s: str(s).replace('=?', ''), statements))
+    print('', *statement_strings, sep=' | ')
+
+    # Data
+    cols = len(variable_names)
+    states = [ [name, 0] for name in variable_names ]
+    sameResults = True
+    for row in range(2**len(variable_names)):
+        for col, name in enumerate(variable_names):
+            state = (row // (2**(cols - 1 - col))) % 2
+            states[col][1] = state
+            print(' | ', state, sep='', end='')
+            print(' '*(len(name) - 1), end='')
+        
+        lastState = None
+
+        for statement, statement_string in zip(statements, statement_strings):
+            for state_data in states:
+                set_variable_state(statement, state_data[0], state_data[1])
+            state = int(statement.state())
+            if lastState is not None and lastState != state:
+                sameResults = False
+            lastState = state
+            print(' | ', state, sep='', end='')
+            print(' '*(len(statement_string) - 1), end='')
+        print()
+
+    if len(statements) > 1:
+        print('Same results: %s' % sameResults)    
+
+    # Restore states
+    for statement, states in zip(statements, orig_states):
+        for state_data in states:
+            set_variable_state(statement, state_data[0], state_data[1])
+
+
+def de_morgan(statement) -> Node:
+    connHolder = None
+    conn = statement
+    while isinstance(conn, Not):
+        connHolder = conn
+        conn = conn.operands[0]
+    
+    negatedOperands = map(lambda o: Not(o), conn.operands)
+    if isinstance(conn, And):
+        oppositeConn = Not(Or(*negatedOperands))
+    elif isinstance(conn, Or):
+        oppositeConn = Not(And(*negatedOperands))
+    else:
+        raise LogicError('Invalid Note found for de morgan!')
+
+    if connHolder is not None:
+        connHolder.operands[0] = oppositeConn
+    else:
+        statement = oppositeConn
+    
+    return statement
