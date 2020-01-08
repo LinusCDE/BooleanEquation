@@ -309,8 +309,8 @@ class Not(Node):
 class Xor(Node):
     def __init__(self, *operands):
         '''
-        All that matters is that there is ANY value that is True.
-        Unknown values don't matter in that case.
+        Excately two operators. One has to be true and one false.
+        No excuses!
         '''
         Node.__init__(self)
         if len(operands) != 2:
