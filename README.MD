@@ -7,9 +7,9 @@ This Python Library can be used to:
 - Generate valid variable values for variables to get a desired result
 
 The library is best used when having all fields imported into your current context.  
-It is meant to easy or check excercises you may get in university.
+It is meant to ease or check excercises you may get in university.
 
-I made this library, initially to backtrack equations and later added capabilities that helped me verify whether my equivalent transformations worked out.
+I made this library, initially to backtrack equations. Later I added capabilities, that helped me to verify whether my equivalent transformations worked out.
 
 ## Requirements
 
@@ -59,7 +59,7 @@ There are several ways to create statements.
 
 You can either nest the statements, or write them in a more traditional way.
 
-This is how you can express this eqauation:
+Here are some ways to express the same equation:
 
 ```python
 x = Var('x')
@@ -110,10 +110,10 @@ The result of the above statement would be:
  | 1 | 0 | 0 | 0                                                            
  | 1 | 0 | 1 | 0                                                            
  | 1 | 1 | 0 | 0                                                            
- | 1 | 1 | 1 | 0                                                             
+ | 1 | 1 | 1 | 0                                                            
 ```
 
-You can also print more then one eqation at once as long as the variables match by name. That if often a nice way to compare, if two equations are equal.
+You can also print more then one equation at once as long as the variables match by name. That is often a nice way to compare, if two equations are equal.
 
 ```python
 original = Or('~x', '~y', '~z') & Or('~y', 'z') & Or('x', And(Or('y', 'z'), '~z')) & Or('~x', 'y')
@@ -138,7 +138,7 @@ Same results: True
 
 You can query the state of every node with `your_node.state()`. If it isn't certain, you'll get an `UnknownStateError`. Getting a state also doesn't mean that every variable has a state. Sometimes that might not matter to determine a statement.
 
-With `your_node.set_state(True/False/1/0)`, you can set the current state. The most trivial one is a variable. But you can also use that on a state to change all variables result in your wished state. If this isn't possible, you'll get a `StateChangeUnableError`.  
+With `your_node.set_state(True/False/1/0)`, you can set the current state. The most trivial one is a variable. But you can also use that on a state to change all variables to result in your wished state. If this isn't possible, you'll get a `StateChangeUnableError`.  
 Note that not all Variables have to get a state to get your wished result. If they are still raising an `UnknownStateError`, it simply doesn't matter.
 
 Also keep in mind, that changing the state of a complex statement, will give you one possible solution. Not all of them.
@@ -157,4 +157,4 @@ Python prefers ∧ to ∨ in these cases as excpected and you can override this 
 
 `Nand` and `Nor` are not classes (as the rest of the nodes), but functions that return the nested classes for that.
 
-There is a function `de_morgan`. You can use it, but it's not that efficient and is probably experimental (seems to be correct though). If you want, you can implement more methods of those kind and send me a PR. I would be glade to create a collection of functions to work with those statements.
+There is a function `de_morgan`. You can use it, but it's not that efficient and is probably experimental (seems to be correct though). If you want, you can implement more methods of those kind and send me a PR. I would be glad to create a collection of functions that work with those statements.
