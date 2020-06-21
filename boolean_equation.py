@@ -490,6 +490,9 @@ def print_lookup_table(*statements, sorted_variables=True):
         for statement in statements:
             set_variable_state(statement, variable_name, None)
     statement_strings = list(map(lambda s: str(s).replace('=?', ''), statements))
+    for i, statement_string in enumerate(statement_strings):
+        if len(statement_string) > 32:
+            statement_strings[i] = statement_string[:29] + '...'
     print('', *statement_strings, sep=' | ')
 
     # Data
